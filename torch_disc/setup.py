@@ -14,6 +14,9 @@ from __future__ import print_function
 import re
 import os
 import glob
+import inspect
+import multiprocessing
+import multiprocessing.pool
 
 from setuptools import setup, find_packages, distutils
 from torch.utils.cpp_extension import BuildExtension, CppExtension
@@ -40,7 +43,9 @@ torch_ltc_sources = (
     glob.glob('pytorch/lazy_tensor_core/lazy_tensors/core/platform/*.cc') +
     client_files)
 
-torch_disc_sources = glob.glob('torch_disc/csrc/*.cpp') + torch_ltc_sources
+torch_conversion_sources = [
+    os.path.join(base_dir, os.path.pardir, 'pytorch_blade/src/compiler/mlir/converters/mhlo_conversion.cpp')]
+torch_disc_sources = glob.glob('torch_disc/csrc/*.cpp') + torch_ltc_sources + torch_conversion_sources
 # Constant known variables used throughout this file.
 lib_path = os.path.join(base_dir, 'torch_disc/lib')
 pytorch_source_path = os.getenv('PYTORCH_SOURCE_PATH', os.path.join(base_dir, 'pytorch'))
@@ -50,7 +55,8 @@ include_dirs = [
     pytorch_source_path,
     os.path.join(pytorch_source_path, 'torch/csrc'),
     os.path.join(pytorch_source_path, 'lazy_tensor_core'),
-    'torch_disc/csrc'
+    'torch_disc/csrc',
+    os.path.join(base_dir, os.path.pardir, 'pytorch_blade/src'),
 ]
 
 extra_compile_args = [
@@ -74,6 +80,45 @@ extra_link_args = []
 def make_relative_rpath(path):
     return '-Wl,-rpath,$ORIGIN/' + path
 
+def _compile_parallel(self,
+                      sources,
+                      output_dir=None,
+                      macros=None,
+                      include_dirs=None,
+                      debug=0,
+                      extra_preargs=None,
+                      extra_postargs=None,
+                      depends=None):
+    # Those lines are copied from distutils.ccompiler.CCompiler directly.
+    macros, objects, extra_postargs, pp_opts, build = self._setup_compile(
+        output_dir, macros, include_dirs, sources, depends, extra_postargs)
+    cc_args = self._get_cc_args(pp_opts, debug, extra_preargs)
+
+    def compile_one(obj):
+        try:
+            src, ext = build[obj]
+        except KeyError:
+            return
+        self._compile(obj, src, ext, cc_args, extra_postargs, pp_opts)
+
+    list(
+        multiprocessing.pool.ThreadPool(multiprocessing.cpu_count()).imap(
+            compile_one, objects))
+    return objects
+
+
+def _check_env_flag(name, default=''):
+    return os.getenv(name, default).upper() in ['ON', '1', 'YES', 'TRUE', 'Y']
+
+
+# Plant the parallel compile function.
+if _check_env_flag('COMPILE_PARALLEL', default='1'):
+    try:
+        if (inspect.signature(distutils.ccompiler.CCompiler.compile) ==
+                inspect.signature(_compile_parallel)):
+            distutils.ccompiler.CCompiler.compile = _compile_parallel
+    except BaseException:
+        pass
 
 setup(
     name='torch_disc',

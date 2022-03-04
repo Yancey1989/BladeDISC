@@ -55,7 +55,7 @@ std::string GetLazyTensorsDump(
 }
 
 void InitLtcModuleBindings(py::module m) {
-  m.def("_ltc_init_ts_backend", []() { compiler::InitTorchScriptBackend(); });
+  m.def("_ltc_init_disc_backend", []() { compiler::InitTorchScriptBackend(); });
   m.def("_ltc_dump_graph", []() {
     auto device = GetDeviceOrCurrent("");
     auto tensors =

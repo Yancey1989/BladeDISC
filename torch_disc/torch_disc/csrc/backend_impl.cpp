@@ -15,6 +15,9 @@
 #include <torch/csrc/lazy/backend/backend_device.h>
 #include <torch/csrc/lazy/ts_backend/ts_lowering_context.h>
 
+#include "compiler/mlir/converters/mhlo_conversion.h"
+#include "lazy_tensor_core/csrc/ts_backend/backend_impl.h"
+
 namespace torch_disc {
 namespace compiler {
 
@@ -42,8 +45,10 @@ const std::set<int8_t> TSBackendDeviceType::supported_device_types_ = {
 
 class DISCBackendImpl : public torch::lazy::BackendImplInterface {
  public:
-  DISCBackendImpl() : default_device_type_(at::kCUDA) {}
-
+  DISCBackendImpl() : default_device_type_(at::kCPU) {
+    auto type = at::kCPU;
+    default_device_type_ = TSBackendDeviceType(type);
+  }
   std::unique_ptr<torch::lazy::LoweringContext> CreateLoweringContext(
       const std::string& name, torch::lazy::BackendDevice device,
       c10::ArrayRef<torch::lazy::Node*> post_order,
@@ -74,7 +79,21 @@ class DISCBackendImpl : public torch::lazy::BackendImplInterface {
   torch::lazy::BackendDataPtr MakeComputationDataFromTensor(
       const at::Tensor& tensor, const torch::lazy::Shape& shape,
       const torch::lazy::BackendDevice& device) const override {
-    LOG(FATAL) << "not implemented";
+    at::TensorOptions options = tensor.options().device(
+        default_device_type_.c10Type(), device.ordinal());
+    if (tensor.device().type() == default_device_type_.c10Type() &&
+        default_device_type_.c10Type() == at::kCUDA) {
+      return std::make_shared<TSData>(tensor.to(options, /*non_blocking=*/true),
+                                      shape, device);
+    } else if (tensor.device().type() == at::kCPU && tensor.numel() == 1) {
+      // calling .item() on singleton cpu tensor is fast, and using fill is a
+      // safe, async way to copy cpu to cuda for a single value
+      auto device_tensor = at::full(tensor.sizes(), tensor.item(), options);
+      return std::make_shared<TSData>(device_tensor, shape, device);
+    } else {
+      return std::make_shared<TSData>(
+          tensor.to(options, /*non_blocking=*/false), shape, device);
+    }
   }
 
   torch::lazy::BackendDataPtr MakeComputationDataFromScalar(
@@ -132,6 +151,12 @@ class DISCBackendImpl : public torch::lazy::BackendImplInterface {
     LOG(FATAL) << "Not implemented yet.";
   }
 
+  // std::map<std::string, Metric> GetMetrics() const override { return {}; }
+
+  // MemoryInfo GetMemoryInfo(const std::string& device) override {
+  //   LOG(FATAL) << "Not implemented yet.";
+  // }
+
   void PrepareToExit() const override;
 
  private:
@@ -157,10 +182,13 @@ std::vector<torch::lazy::BackendDataPtr> DISCBackendImpl::ExecuteComputation(
     torch::lazy::Computation& computation,
     c10::ArrayRef<torch::lazy::BackendDataPtr> arguments,
     const torch::lazy::BackendDevice& device) const {
-  VLOG(0) << "DISCBackendImpl";
-
+  std::cout << "DISCBackendImpl::ExecuteComputation ...";
   torch::jit::GraphExecutor& graph_executor =
       static_cast<torch::lazy::TSComputation&>(computation).graph_executor();
+
+  torch::blade::ConvertTorchScriptToMhlo(
+      static_cast<torch::lazy::TSComputation&>(computation).graph());
+
   std::vector<torch::jit::IValue> stack;
   for (auto argument : arguments) {
     const auto ts_data = std::static_pointer_cast<TSData>(argument);

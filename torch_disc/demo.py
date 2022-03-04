@@ -21,6 +21,7 @@ from torch.optim.lr_scheduler import StepLR
 
 #import lazy_tensor_core.core.lazy_model as ltm
 import torch_disc as disc
+disc._DISC._ltc_init_disc_backend()
 class SimpleNet(nn.Module):
     def __init__(self):
         super(SimpleNet, self).__init__()
