@@ -45,4 +45,5 @@ RUN cd $PYTHON_TF_PATH && \
     ln -sf libtensorflow_framework.so.2 libtensorflow_framework.so && \
     echo "source $PYTHON_ENV/bin/activate" >> ~/.bashrc
 
-RUN wget -O -q /usr/local/bin/bazel http://bladedisc-ci.oss-cn-hongkong.aliyuncs.com/download/bazel/bazel-5.1.1-linux-arm64
+COPY docker/scripts /install/scripts
+RUN bash /install/scripts/install-bazel.sh
