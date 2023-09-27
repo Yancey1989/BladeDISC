@@ -1,4 +1,3 @@
-# Triton with DISC backend
-
+# Triton with BladeDISC backend
 
 
