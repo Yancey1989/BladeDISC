@@ -16,3 +16,6 @@
 [submodule "tao_compiler/mlir/disc/cutlass"]
 	path = tao_compiler/mlir/disc/cutlass
 	url = https://github.com/NVIDIA/cutlass.git
+[submodule "triton_disc/third_party/triton"]
+	path = triton_disc/third_party/triton
+	url = git@github.com:Yancey1989/triton.git

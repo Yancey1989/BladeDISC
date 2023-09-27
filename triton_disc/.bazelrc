@@ -1,0 +1,5 @@
+try-import ../tao_compiler/.bazelrc
+try-import ../tao_compiler/.bazelrc.user
+
+build --config=cuda --define enable_cuda=true
+build --cxxopt=-std=c++17
